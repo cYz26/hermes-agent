@@ -1,5 +1,5 @@
 /**
- * A queued prompt must remain local until the current inference turn settles.
+ * A queued prompt must not reach inference until the current turn settles.
  *
  * Hold the first streamed reply open after its first token. This gives the
  * composer a live, busy turn while the user queues a follow-up, then lets us
@@ -29,7 +29,7 @@ async function steer(page: Page, text: string): Promise<void> {
 
   await composer.click()
   await composer.type(text, { delay: 5 })
-  await page.keyboard.press('Enter')
+  await page.getByRole('button', { name: 'Steer the current run', exact: true }).click()
 }
 
 async function queue(page: Page, text: string): Promise<void> {
@@ -37,7 +37,7 @@ async function queue(page: Page, text: string): Promise<void> {
 
   await composer.click()
   await composer.type(text, { delay: 5 })
-  await page.keyboard.press('Control+Enter')
+  await page.keyboard.press('Enter')
 }
 
 async function transcriptMessageOrder(page: Page): Promise<string[]> {
@@ -83,7 +83,10 @@ test.describe('queued prompt turn boundary', () => {
     await mock.waitForHeldStream()
     await queue(page, QUEUED_PROMPT)
     await expect(page.getByText('1 Queued')).toBeVisible()
+    await page.keyboard.press('Enter')
+    await expect(page.getByText('1 Queued')).toBeVisible()
 
+    // Repeated empty Enter must not promote the queued follow-up into Steer.
     // The mock keeps the active SSE stream open, so a queued prompt has no
     // completed-turn boundary that could legitimately drain it. Wait past the
     // queue retry interval and assert the provider saw only the active turn.

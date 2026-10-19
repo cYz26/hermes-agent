@@ -11,6 +11,7 @@ import { recordAction } from '@/store/desktop-metrics'
 import { $hudMode, closeHud, resetHudLayout } from '@/store/hud'
 import { $wakeWord, toggleWakeWord } from '@/store/wake-word'
 
+import type { ComposerBusyAction } from './busy-submit-state'
 import { ACTIVE_ICON_BTN, GHOST_ICON_BTN, PRIMARY_ICON_BTN } from './control-classes'
 import type { ConversationStatus } from './hooks/use-voice-conversation'
 import { ModelPill } from './model-pill'
@@ -57,7 +58,7 @@ export function ComposerControls({
 }: {
   autoSpeak: boolean
   busy: boolean
-  busyAction: 'interrupt' | 'steer' | 'queue' | 'stop'
+  busyAction: ComposerBusyAction
   canSubmit: boolean
   /** A card parked on the session takes typed text as its answer, so queueing that text would leave the card waiting. */
   cardWaiting?: boolean
@@ -84,8 +85,8 @@ export function ComposerControls({
   }
 
   const showVoicePrimary = !busy && !hasComposerPayload
-  // Steer is just send: a payload keeps the Send affordance mid-turn (it answers
-  // a waiting card). Stop only when the composer is empty and a turn is running.
+  // A waiting card keeps Send for its answer; ordinary busy payloads show Queue.
+  // Stop only when the composer is empty and a turn is running.
   const showStop = busy && !hasComposerPayload
 
   const showQueueButton = queueButtonVisible(busy, busyAction, hasComposerPayload, cardWaiting)
@@ -136,7 +137,7 @@ export function ComposerControls({
           {voiceControls}
         </>
       )}
-      {renderSteerButton(busy, busyAction, onSteer, disabled, c.steer)}
+      {renderSteerButton(busy && !cardWaiting, busyAction, onSteer, disabled, c.steer)}
       {showQueueButton ? (
         <Tip label={<TipKeybindLabel actionId="composer.queue" text={c.queueMessage} />} placement="control">
           <Button
@@ -196,7 +197,7 @@ export function ComposerControls({
 // never while a card waits (its Send answers the card).
 function queueButtonVisible(
   busy: boolean,
-  busyAction: 'interrupt' | 'steer' | 'queue' | 'stop',
+  busyAction: ComposerBusyAction,
   hasPayload: boolean,
   cardWaiting: boolean
 ): boolean {
@@ -205,21 +206,21 @@ function queueButtonVisible(
 
 function composerSendLabel(
   busy: boolean,
-  busyAction: 'interrupt' | 'steer' | 'queue' | 'stop',
+  busyAction: ComposerBusyAction,
   c: { redirect: string; queueMessage: string; send: string; steer: string; stop: string }
 ): string {
-  return busy ? { interrupt: c.redirect, queue: c.queueMessage, steer: c.steer, stop: c.stop }[busyAction] : c.send
+  return busy ? { interrupt: c.redirect, queue: c.queueMessage, send: c.send, steer: c.steer, stop: c.stop }[busyAction] : c.send
 }
 
 function renderSteerButton(
   busy: boolean,
-  busyAction: 'interrupt' | 'steer' | 'queue' | 'stop',
+  busyAction: ComposerBusyAction,
   onSteer: (() => void) | undefined,
   disabled: boolean,
   label: string
 ) {
   return busy && busyAction !== 'steer' && onSteer ? (
-    <Tip label={label}>
+    <Tip label={<TipKeybindLabel actionId="composer.steer" text={label} />} placement="control">
       <Button
         aria-label={label}
         className={GHOST_ICON_BTN}

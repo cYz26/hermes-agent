@@ -240,7 +240,7 @@ function renderEntryActions({
     </Tip>
   ) : (
     <>
-      {(!entry.serverStatus || entry.serverControls?.includes('replace')) && (
+      {((!entry.serverStatus && !entry.submissionId) || entry.serverControls?.includes('replace')) && (
         <Tip label={c.queueEdit}>
           <Button
             aria-label={c.queueEdit}

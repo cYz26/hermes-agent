@@ -1,4 +1,4 @@
-import { getQueuedPrompts, type QueuedPromptEntry, writeSessionQueue } from './composer-queue'
+import { enqueueQueuedPrompt, type EnqueueQueuedPromptPayload, getQueuedPrompts, type QueuedPromptEntry, writeSessionQueue } from './composer-queue'
 import { $sessions, resolveComposerSessionKey } from './session'
 
 // One localStorage key per (session, admission). Every Desktop window of the origin shares this
@@ -10,6 +10,8 @@ const ENTRY_PREFIX = 'hermes.desktop.pendingSubmissions.v2:'
 const LEGACY_KEY = 'hermes.desktop.pendingSubmissions.v1'
 interface PendingSubmission {
   id: string
+  /** The caller's submission identity; the owner's admission id is a different identity. */
+  submissionId?: string
   text: string
   displayText?: string
   status?: string
@@ -160,6 +162,38 @@ export function trackPendingSubmission(storedId: string, entry: PendingSubmissio
   window.localStorage.setItem(entryKey(key, entry.id), JSON.stringify(mergeReceipt(held, entry)))
 }
 
+/** Keep an uncertain widget admission without recreating work the owner already acknowledged via
+ *  fanout. Started/retired admissions have no card, but their input identity still rules out a
+ *  local copy. An unobserved attempt stays visible for an exact retry, never a local redirect. */
+export function retainQueuedSubmission(
+  storedId: string | null | undefined,
+  payload: EnqueueQueuedPromptPayload & { id: string }
+): void {
+  if (!storedId) {
+    return
+  }
+
+  const key = journalKey(storedId)
+
+  try {
+    adoptJournal(storedId, key)
+    const known = Object.values(readPendingSubmissions(key))
+
+    if (known.some(entry => entry.status && (entry.id === payload.id || entry.submissionId === payload.id))) {
+      return
+    }
+  } catch {
+    // An unavailable journal is uncertainty, not refusal. The queue's in-memory
+    // fallback must retain the same retry identity without enabling local Steer.
+  }
+
+  if (getQueuedPrompts(key).some(entry => entry.id === payload.id || entry.submissionId === payload.id)) {
+    return
+  }
+
+  enqueueQueuedPrompt(key, { ...payload, submissionId: payload.id })
+}
+
 // Array.isArray narrows `unknown` to `any[]`; the helpers keep that wire shape.
 type RawReceipts = any[]
 
@@ -171,7 +205,9 @@ const isStale = (raw: { admission_id: string; status: string }, known: Record<st
 
 function collectReceipts(value: RawReceipts, known: Record<string, PendingSubmission>) {
   const receipts = new Map<string, PendingSubmission>()
-  const admissionByInput = new Map<string, string>()
+
+  const admissionByInput = new Map(Object.values(known).filter(entry => entry.status)
+    .map(entry => [entry.submissionId ?? entry.id, entry.id]))
 
   for (const raw of value) {
     if (!raw || typeof raw.admission_id !== 'string' || !['queued', 'started', 'unknown'].includes(raw.status)) {
@@ -181,19 +217,20 @@ function collectReceipts(value: RawReceipts, known: Record<string, PendingSubmis
     const id = raw.admission_id
     const stale = isStale(raw, known)
 
+    if (typeof raw.input_id === 'string') {
+      admissionByInput.set(raw.input_id, id)
+    }
+
     // A stale status is still a listing: the admission is pending at its stronger observed state
     // (a replayed `started` keeps an `unknown` card and its Discard). A retired one stays retired.
     if (stale && known[id]?.status === 'retired') {
       continue
     }
 
-    if (typeof raw.input_id === 'string') {
-      admissionByInput.set(raw.input_id, id)
-    }
-
     receipts.set(id, {
       ...known[id],
       id,
+      ...(typeof raw.input_id === 'string' ? { submissionId: raw.input_id } : {}),
       text: typeof raw.user === 'string' ? raw.user : (known[id]?.text ?? ''),
       status: stale ? known[id].status : raw.status,
       ...(Array.isArray(raw.controls) ? { controls: raw.controls.filter((c: unknown) => typeof c === 'string') } : {})
@@ -215,31 +252,48 @@ function projectQueue(
   current: QueuedPromptEntry[],
   receipts: Map<string, PendingSubmission>,
   admissionByInput: Map<string, string>,
-  stillPending: Set<string>
+  stillPending: Set<string>,
+  known: Record<string, PendingSubmission>
 ): QueuedPromptEntry[] {
   // The owner lists its admissions in FIFO order: a card it lists is shown in that order, so an
   // admission back in its queue place (a steer that never reached the turn) is not shown last.
   const order = new Map([...receipts.keys()].map((id, index) => [id, index]))
   const next: QueuedPromptEntry[] = []
+  const currentById = new Map(current.map(entry => [entry.id, entry]))
+  const projected = new Set<string>()
 
   for (const entry of current) {
-    const receipt = receipts.get(admissionByInput.get(entry.id) ?? entry.id)
+    const id = admissionByInput.get(entry.id) ?? entry.id
+    const listed = receipts.get(id)
+    const receipt = listed ?? (stillPending.has(id) ? known[id] : undefined)
 
     if (receipt) {
-      if (receipt.status !== 'started') {
-        next.push({ ...entry, id: receipt.id, serverStatus: receipt.status, serverControls: receipt.controls })
+      if (!projected.has(id) && receipt.status !== 'started') {
+        // A retained input and its already-projected admission are ONE row, in either order.
+        // Keep the local attachment/display snapshot while the owner keeps status, controls and FIFO.
+        const retained = receipt.submissionId ? currentById.get(receipt.submissionId) : undefined
+        const source = retained && !retained.serverStatus ? retained : entry
+
+        next.push({
+          ...source,
+          id,
+          submissionId: receipt.submissionId ?? source.submissionId,
+          serverStatus: receipt.status,
+          serverControls: listed ? listed.controls : currentById.get(id)?.serverControls
+        })
       }
 
-      receipts.delete(receipt.id)
-    } else if (!entry.serverStatus || stillPending.has(entry.id)) {
+      projected.add(id)
+    } else if (!entry.serverStatus && !admissionByInput.has(entry.id)) {
       next.push(entry)
     }
   }
 
   for (const receipt of receipts.values()) {
-    if (receipt.status !== 'started') {
+    if (!projected.has(receipt.id) && receipt.status !== 'started') {
       next.push({
         id: receipt.id,
+        submissionId: receipt.submissionId,
         text: receipt.text,
         displayText: receipt.displayText,
         attachments: [],
@@ -272,7 +326,7 @@ function updateKnownReceipts(known: Record<string, PendingSubmission>, value: Ra
   for (const [id, entry] of Object.entries(known)) {
     if (entry.status && entry.status !== 'retired' && !value.some(raw => raw?.admission_id === id) &&
         !predates(fence, entry.seen)) {
-      known[id] = { id, text: '', status: 'retired' }
+      known[id] = { id, submissionId: entry.submissionId, text: '', status: 'retired' }
     }
   }
 
@@ -289,6 +343,7 @@ function updateKnownReceipts(known: Record<string, PendingSubmission>, value: Ra
       known[raw.admission_id] = {
         ...previous,
         id: raw.admission_id,
+        ...(typeof raw.input_id === 'string' ? { submissionId: raw.input_id } : {}),
         text: raw.user ?? previous?.text ?? '',
         // A steer in transfer reads `started` but can still go back to its queue place: it never
         // raises the admission's rank, so the owner's later `queued` listing repaints its card.
@@ -320,7 +375,7 @@ export function reconcilePendingSubmissions(storedId: string, value: unknown, fe
     !value.some(raw => raw?.admission_id === entry.id)).map(entry => entry.id))
 
   const current = getQueuedPrompts(key)
-  const next = projectQueue(current, receipts, admissionByInput, stillPending)
+  const next = projectQueue(current, receipts, admissionByInput, stillPending, known)
 
   updateKnownReceipts(known, value, fence)
   writeEntries(key, before, known)

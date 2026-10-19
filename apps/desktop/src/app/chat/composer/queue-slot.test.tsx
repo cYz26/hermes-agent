@@ -122,3 +122,20 @@ it('Edit on a server-queued card opens it in the composer', async () => {
 
   expect(inputs.beginQueuedEdit).toHaveBeenCalledWith(expect.objectContaining({ id: 'adm-1', serverStatus: 'queued' }))
 })
+
+it('hides both canonical and local queue-row Steer when a parked card owns the turn', async () => {
+  reconcilePendingSubmissions('stored', [
+    { admission_id: 'adm-1', status: 'queued', user: 'server words', controls: ['steer', 'replace'] }
+  ])
+  enqueueQueuedPrompt('stored', { text: 'local words', attachments: [] })
+  const request = vi.fn(async () => ({}))
+  renderSlot(request, { steerQueuedNow: undefined })
+  await expand()
+
+  for (const text of ['server words', 'local words']) {
+    expect(labels(rowButtons(text))).not.toContain(en.composer.queueSteer)
+    expect(labels(rowButtons(text))).toContain(en.composer.queueDelete)
+  }
+
+  expect(request).not.toHaveBeenCalled()
+})

@@ -7,7 +7,8 @@ import {
   answerParkedCard,
   type ParkedCardAnswer,
   registerParkedCardAnswer,
-  sessionOnboardingCardWaiting
+  sessionOnboardingCardWaiting,
+  sessionParkedCardWaiting
 } from './parked-card-answers'
 
 const kind = (answer: ParkedCardAnswer) => ({ $requests: atom({}), answer, waiting: () => false })
@@ -52,6 +53,26 @@ describe('parked card answers', () => {
 
     expect(answerParkedCard('session-a', 'hello', onFailed)).toBe(true)
     await vi.waitFor(() => expect(onFailed).toHaveBeenCalledTimes(1))
+  })
+
+  it('publishes ordinary-chat waiting cards reactively without marking them onboarding-only', () => {
+    const $requests = atom<Record<string, boolean>>({})
+    unregister.push(registerParkedCardAnswer('test-ordinary', {
+      $requests, answer: () => null, waiting: sessionId => !!$requests.get()[sessionId]
+    }))
+    const $ordinary = sessionParkedCardWaiting('session-a')
+    const $onboarding = sessionOnboardingCardWaiting('session-a')
+    const off = $ordinary.listen(() => {})
+
+    try {
+      expect($ordinary.get()).toBe(false)
+      $requests.set({ 'session-a': true })
+      expect($ordinary.get()).toBe(true)
+      expect($onboarding.get()).toBe(false)
+      expect(sessionParkedCardWaiting('session-b').get()).toBe(false)
+      $requests.set({})
+      expect($ordinary.get()).toBe(false)
+    } finally { off() }
   })
 
   it('takes typed text for an onboarding-only card in the onboarding chat, and leaves every other chat alone', () => {

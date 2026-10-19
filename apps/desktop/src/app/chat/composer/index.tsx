@@ -14,13 +14,13 @@ import {
 import { useTourMarker } from '@/app/chat/tour-marker'
 import type { GatewayRequester } from '@/app/contrib/types'
 import { useHudComposerDrag } from '@/app/hud/composer-drag'
-import { useBusyInputMode } from '@/app/session/hooks/use-busy-input-mode'
 import { composerFloatingStrip, composerInputBacking } from '@/components/chat/composer-dock'
 import { useSetupChatView } from '@/components/onboarding/first-run/assembly'
 import { OnboardingSkip } from '@/components/onboarding/skip-setup'
 import { Slot as ContribSlot } from '@/contrib/react/slot'
 import { useI18n } from '@/i18n'
 import { chatMessageText } from '@/lib/chat-messages'
+import { isSlashCommandText } from '@/lib/chat-runtime'
 import { sanitizeComposerInput } from '@/lib/composer-input-sanitize'
 import { DATA_IMAGE_URL_RE } from '@/lib/embedded-images'
 import { triggerHaptic } from '@/lib/haptics'
@@ -191,11 +191,9 @@ export function ChatBar({
     [gateway]
   )
 
-  const busyInputMode = useBusyInputMode({
-    sessionId: sessionId ?? null,
-    storedSessionId: queueSessionKey ?? null,
-    requestGateway: requestBusyConfig
-  })
+  // Desktop's ordinary send is deliberately Queue, regardless of the backend's
+  // default busy-input mode. Explicit Steer still chooses redirect separately.
+  const busyInputMode = 'queue' as const
 
   // Status items (subagents, background processes) are keyed by the RUNTIME
   // session id — gateway events and process.list both speak that id. Only the
@@ -350,7 +348,6 @@ export function ChatBar({
   // and bounded auto-drain. Consumes the draft API and writes `queueEditRef`.
   const {
     beginQueuedEdit,
-    deliverQueuedNow,
     drainNextQueued,
     editingQueuedPrompt,
     exitQueuedEdit,
@@ -409,10 +406,13 @@ export function ChatBar({
     blockingPrompt,
     busy,
     busyInputMode,
+    cardWaiting,
     compacting,
     hasComposerPayload,
     hasSteerHandler: !!onSteer,
-    isSteerableText
+    isSlashCommand: isSlashCommandText(draftRef.current),
+    isSteerableText,
+    queueEditing: !!queueEdit
   })
 
   // The submit engine — the orchestration seam where draft + queue meet. Owns
@@ -965,8 +965,20 @@ export function ChatBar({
       return
     }
 
-    // Cmd/Ctrl+Enter queues a follow-up while a turn runs. Plain Enter steers
-    // a text-only draft, so both live-turn actions stay reachable by keyboard.
+    // Steer is an explicit redirect, not the ordinary Send policy and not the
+    // separate hidden-setup/tool-boundary channel.
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey) {
+      event.preventDefault()
+
+      if (busy && !inputDisabled && !queueEdit && !cardWaiting && !blockingPrompt) {
+        syncDraftFromEditor()
+        steerDraft('interrupt')
+      }
+
+      return
+    }
+
+    // Keep Cmd/Ctrl+Enter as a Queue alias for ordinary busy Enter.
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
       event.preventDefault()
 
@@ -1008,22 +1020,9 @@ export function ChatBar({
         return
       }
 
-      // Empty Enter while busy. With prompts queued this is the double-send:
-      // the first Enter put the words in the queue, a second delivers them
-      // now — steered into the live turn when a steer can carry them, else
-      // promote + interrupt + drain on settle — mirroring the idle empty-Enter
-      // drain above. With nothing queued it stays a no-op — interrupting is
-      // explicit (Stop/Esc), never a stray Enter after sending. Gate on the live
-      // DOM payload (not the render-lagged composer state) so a message typed
-      // fast / via IME while busy still reaches submitDraft() and gets queued
-      // instead of being mistaken for an empty Enter.
+      // Repeated Enter after queueing must not promote that message to Steer
+      // or interrupt the run. The queue panel owns explicit send-now actions.
       if (busy && !hasLivePayload) {
-        const head = queuedPrompts.find(entry => entry.id !== queueEdit?.entryId)
-
-        if (head) {
-          void deliverQueuedNow(head.id)
-        }
-
         return
       }
 
@@ -1147,7 +1146,16 @@ export function ChatBar({
       minimal={minimal || chatOnboardingSolo}
       onDictate={dictate}
       onQueue={queueDraft}
-      onSteer={canSteer ? () => steerDraft('steer') : undefined}
+      onSteer={
+        canSteer
+          ? () => {
+              if (!composingRef.current) {
+                syncDraftFromEditor()
+                steerDraft('interrupt')
+              }
+            }
+          : undefined
+      }
       onToggleAutoSpeak={handleToggleAutoSpeak}
       state={state}
       voiceStatus={voiceStatus}
@@ -1357,7 +1365,7 @@ export function ChatBar({
                 queuedPrompts,
                 sendQueuedNow,
                 sessionId,
-                steerQueuedNow,
+                steerQueuedNow: cardWaiting || blockingPrompt ? undefined : steerQueuedNow,
                 t
               })}
               sessionId={statusSessionId}

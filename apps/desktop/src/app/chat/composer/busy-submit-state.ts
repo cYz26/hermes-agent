@@ -1,16 +1,19 @@
 import type { BusyInputMode } from '@/store/busy-input-mode'
 
-export type ComposerBusyAction = 'interrupt' | 'steer' | 'queue' | 'stop'
+export type ComposerBusyAction = 'interrupt' | 'steer' | 'queue' | 'send' | 'stop'
 
 export interface BusySubmitInputs {
   attachmentCount: number
   blockingPrompt: boolean
   busy: boolean
   busyInputMode: BusyInputMode | null
+  cardWaiting: boolean
   compacting: boolean
   hasComposerPayload: boolean
   hasSteerHandler: boolean
+  isSlashCommand: boolean
   isSteerableText: boolean
+  queueEditing: boolean
 }
 
 export interface BusySubmitState {
@@ -25,28 +28,44 @@ export function deriveBusySubmitState({
   blockingPrompt,
   busy,
   busyInputMode,
+  cardWaiting,
   compacting,
   hasComposerPayload,
   hasSteerHandler,
-  isSteerableText
+  isSlashCommand,
+  isSteerableText,
+  queueEditing
 }: BusySubmitInputs): BusySubmitState {
   const canSubmit =
     (busy || hasComposerPayload) &&
-    !(busy && isSteerableText && attachmentCount === 0 && !compacting && !blockingPrompt && busyInputMode === null)
+    !(
+      busy &&
+      isSteerableText &&
+      attachmentCount === 0 &&
+      !compacting &&
+      !blockingPrompt &&
+      !cardWaiting &&
+      !queueEditing &&
+      busyInputMode === null
+    )
 
   // Steer only makes sense mid-turn, text-only (the gateway can't carry images
   // into a tool result) and never for a slash command (those execute inline).
   // A blocking prompt (approval/sudo/secret) also rules it out: the tool batch
   // is parked on the user, so a steer can't reach the model — text queues.
   // Compaction does not: the gateway holds the correction until it finishes.
-  const canSteer = busy && !blockingPrompt && hasSteerHandler && attachmentCount === 0 && isSteerableText
+  const canSteer =
+    busy && !blockingPrompt && !cardWaiting && !queueEditing && hasSteerHandler && attachmentCount === 0 && isSteerableText
 
   // Ordinary busy Send follows backend policy; attachments queue and empty stops.
-  const busyAction: ComposerBusyAction = canSteer
-    ? (busyInputMode ?? 'interrupt')
-    : compacting || hasComposerPayload
-      ? 'queue'
-      : 'stop'
+  const busyAction: ComposerBusyAction =
+    isSlashCommand && attachmentCount === 0
+      ? 'send'
+      : canSteer
+        ? (busyInputMode ?? 'interrupt')
+        : compacting || hasComposerPayload
+          ? 'queue'
+          : 'stop'
 
   return { busyAction, canSteer, canSubmit }
 }
