@@ -44,6 +44,8 @@ import { $threadScrolledUpBySession } from '@/store/thread-scroll'
 import { $autoSpeakReplies } from '@/store/voice-prefs'
 import { useTheme } from '@/themes'
 
+import { QuoteFeedbackPanel } from '../quote-feedback/panel'
+
 import { AttachmentList } from './attachments'
 import { deriveBusySubmitState } from './busy-submit-state'
 import { ComposerDockGlow, QueuedEditBanner } from './chat-bar-parts'
@@ -1312,6 +1314,30 @@ export function ChatBar({
             />
             <OnboardingSkip sessionId={statusSessionId} />
           </div>
+          <QuoteFeedbackPanel
+            onAddToDraft={text => {
+              if (
+                inputDisabled ||
+                queueEdit ||
+                !editorRef.current ||
+                draftScopeRef.current !== activeQueueSessionKeyRef.current
+              ) {
+                return false
+              }
+
+              // Bank live keystrokes before the append; persist the text before
+              // the feedback list releases its only copy of these passages.
+              syncDraftFromEditor()
+              withUndoPoint(() => {
+                insertText(`\n${text}`)
+
+                return true
+              })
+              stashAt(draftScopeRef.current)
+
+              return true
+            }}
+          />
           {/* Session-scoped status stack (todos, subagents, background tasks,
               queue). An in-flow dock child: the dock is bottom-anchored, so it
               grows upward over the thread and the dock's own measurement covers

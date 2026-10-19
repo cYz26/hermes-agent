@@ -16,8 +16,10 @@ import { deThemePicker } from './de_theme_picker'
 import { deUpdateChannel } from './de_update_channel'
 import { defineLocale, type TranslationOverrides } from './define-locale'
 import { introDe } from './intro-de'
+import { quoteFeedbackCopy } from './quote-feedback'
 
 export const deOverrides = {
+  quoteFeedback: quoteFeedbackCopy.de,
   sharedMetrics: deSharedMetrics,
   firstRun: deFirstRun,
   intro: introDe,

@@ -50,6 +50,7 @@ import {
   shouldMigrateComposerScope
 } from '@/store/session'
 import { $focusedStoredSessionId } from '@/store/session-focus'
+import type { SessionOwnerRoute } from '@/store/session-request-router'
 import { $sessionStates, sessionTileDelegate } from '@/store/session-states'
 import { $transcriptTailBySessionId, transcriptTailState } from '@/store/transcript-tail'
 import { isAuxiliaryWindow, isMainWindow } from '@/store/windows'
@@ -75,6 +76,7 @@ import { type DroppedFile, partitionDroppedFiles } from './hooks/use-composer-ac
 import { useFileDropZone } from './hooks/use-file-drop-zone'
 import { shouldShowIntro } from './intro-visibility'
 import { ProfileTag } from './profile-tag'
+import { QuoteFeedbackProvider } from './quote-feedback/scope'
 import { ResumeExhaustedOverlay } from './resume-exhausted-overlay'
 import { isRouteSessionMismatch } from './route-session-state'
 import { useRuntimeMessageRepository } from './runtime-repository'
@@ -92,6 +94,8 @@ import { useChatBarState } from './use-chat-bar-state'
 import { useTranscriptRetention } from './use-transcript-retention'
 
 interface ChatViewProps extends Omit<React.ComponentProps<'div'>, 'onSubmit'> {
+  /** Exact desktop owner supplied by a tile, independent of foreground focus. */
+  feedbackOwnerRoute?: SessionOwnerRoute
   gateway: HermesGateway | null
   modelOptionsOwnerConnectionId?: string
   modelOptionsProfile?: string
@@ -209,6 +213,9 @@ interface ChatRuntimeBoundaryProps {
   /** Route points at an unloaded session — render empty until resume swaps in
    *  the new transcript, so the previous session's messages don't linger. */
   suppressMessages: boolean
+  /** Same durable lineage/draft key as this surface's composer. */
+  feedbackSessionKey?: null | string
+  feedbackOwnerRoute?: SessionOwnerRoute
 }
 
 const NO_MESSAGES: ChatMessage[] = []
@@ -250,6 +257,8 @@ function useMessagesWhileVisible($messages: ReadableAtom<ChatMessage[]>, enabled
 export function ChatRuntimeBoundary({
   busy,
   children,
+  feedbackOwnerRoute,
+  feedbackSessionKey,
   onCancel,
   onEdit,
   onReload,
@@ -457,10 +466,26 @@ export function ChatRuntimeBoundary({
     onReload: isHistorical ? undefined : onReload
   })
 
+  // Composer profiles name backend targets; only the surface's complete route
+  // retains a remote tile's desktop alias when foreground focus moves away.
+  const feedbackOwner = feedbackOwnerRoute ?? ownerRoute
+
   return (
     <ComposerScopeProvider value={composerScope}>
       <TranscriptWindowProvider value={transcriptWindow}>
-        <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
+        <QuoteFeedbackProvider
+          enabled={!suppressMessages}
+          lineageFromSessionId={storedId}
+          scope={{
+            connectionId: feedbackOwner?.connectionId ?? composerScope.connectionId ?? (connectionId || null),
+            profile: feedbackOwner?.profile ?? composerScope.profile ?? activeProfile,
+            targetProfile:
+              feedbackOwner?.targetProfile ?? feedbackOwner?.profile ?? composerScope.profile ?? activeProfile,
+            sessionId: feedbackSessionKey ?? storedId ?? 'new'
+          }}
+        >
+          <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
+        </QuoteFeedbackProvider>
       </TranscriptWindowProvider>
     </ComposerScopeProvider>
   )
@@ -481,6 +506,7 @@ export const ChatView = memo(function ChatView(props: ChatViewProps) {
 
 const ChatViewContent = memo(function ChatViewContent({
   className,
+  feedbackOwnerRoute,
   gateway,
   modelOptionsOwnerConnectionId,
   modelOptionsProfile,
@@ -777,6 +803,8 @@ const ChatViewContent = memo(function ChatViewContent({
 
       <ChatRuntimeBoundary
         busy={busy}
+        feedbackOwnerRoute={feedbackOwnerRoute}
+        feedbackSessionKey={queueSessionKey || freshDraftKey}
         onCancel={haltRun}
         onEdit={onEdit}
         onReload={onReload}

@@ -16,8 +16,10 @@ import { jaProjects } from './ja_projects'
 import { jaSharedMetrics } from './ja_shared_metrics'
 import { jaThemePicker } from './ja_theme_picker'
 import { jaUpdateChannel } from './ja_update_channel'
+import { quoteFeedbackCopy } from './quote-feedback'
 
 export const jaOverrides = {
+  quoteFeedback: quoteFeedbackCopy.ja,
   connectors: jaConnectors.connectors,
   externalOpenFailed: {
     title: 'このリンクを開けませんでした',

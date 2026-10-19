@@ -16,8 +16,10 @@ import { frSharedMetrics } from './fr_shared_metrics'
 import { frThemePicker } from './fr_theme_picker'
 import { frUpdateChannel } from './fr_update_channel'
 import { introFr } from './intro-fr'
+import { quoteFeedbackCopy } from './quote-feedback'
 
 export const frOverrides = {
+  quoteFeedback: quoteFeedbackCopy.fr,
   sharedMetrics: frSharedMetrics,
   firstRun: frFirstRun,
   intro: introFr,
