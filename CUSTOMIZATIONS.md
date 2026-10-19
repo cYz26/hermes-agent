@@ -57,7 +57,7 @@ Desktop checks, including the two custom features:
 npm ci --ignore-scripts --no-audit --no-fund
 cd apps/desktop
 npm run typecheck
-npm run test -- --project ui src/app/chat/composer src/app/chat/quote-feedback src/store/composer-queue.test.ts src/store/parked-card-answers.test.ts src/store/quote-feedback.test.ts src/store/quote-feedback-lifecycle.test.ts src/i18n/quote-feedback.test.tsx src/lib/keybinds --maxWorkers=4
+npm run test -- --project ui src/app/chat/composer src/app/chat/quote-feedback src/store/composer-queue.test.ts src/store/pending-submission src/store/parked-card-answers.test.ts src/store/quote-feedback src/i18n/quote-feedback.test.tsx src/lib/keybinds --maxWorkers=4
 npm run i18n:keys -- --check
 npm run build
 cd ../..
@@ -82,6 +82,17 @@ again rather than force-pushing. Updating the upstream-only `main` mirror is a
 separate, explicit fast-forward operation. Existing feature branches retain their
 migration history; start later work from the current `custom/main` and integrate
 it through a feature branch.
+
+## Local state limits
+
+Feedback is persisted per owner/conversation scope. Concurrent writes to the same
+scope are last-writer-wins; this is not a cross-window, multi-key transaction.
+Unrelated scopes must not overwrite each other.
+
+When browser storage is unavailable, queue recovery keeps intent in the current
+window's memory; it cannot promise survival across a restart or another window.
+An unconfirmed canonical widget submission retries its original identity and
+prepared payload, without offering local editing or steering.
 
 ## Building and handing off
 
