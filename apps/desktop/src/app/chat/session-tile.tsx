@@ -399,6 +399,7 @@ function TileChat({
     <SessionViewProvider value={view}>
       <ComposerScopeProvider value={scope}>
         <ChatView
+          feedbackOwnerRoute={ownerRoute}
           gateway={gateway}
           modelMenuContent={modelMenuContent}
           modelOptionsOwnerConnectionId={ownerRoute?.connectionId || undefined}

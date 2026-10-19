@@ -19,9 +19,11 @@ import { enSharedMetrics } from './en_shared_metrics'
 import { enThemePicker } from './en_theme_picker'
 import { enUninstallSection } from './en_uninstall_section'
 import { enUpdateChannel } from './en_update_channel'
+import { quoteFeedbackCopy } from './quote-feedback'
 import type { Translations } from './types'
 
 export const en: Translations = {
+  quoteFeedback: quoteFeedbackCopy.en,
   externalOpenFailed: {
     title: 'Couldn’t open this link',
     message: 'No browser is registered to open this address. Copy the link and open it manually.',

@@ -1,6 +1,7 @@
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
 import { defineLocale, type TranslationOverrides } from './define-locale'
+import { quoteFeedbackCopy } from './quote-feedback'
 import { ruBoot } from './ru_boot'
 import { ruClarify } from './ru_clarify'
 import { ruConnectors } from './ru_connectors'
@@ -37,6 +38,7 @@ const RU_NOUN = (count: number | string, one: string, few: string, many: string)
 }
 
 export const ruOverrides = {
+  quoteFeedback: quoteFeedbackCopy.ru,
   connectors: ruConnectors.connectors,
   sharedMetrics: ruSharedMetrics,
   firstRun: ruFirstRun,

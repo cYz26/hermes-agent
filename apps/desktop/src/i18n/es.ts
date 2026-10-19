@@ -16,8 +16,10 @@ import { esSharedMetrics } from './es_shared_metrics'
 import { esThemePicker } from './es_theme_picker'
 import { esUpdateChannel } from './es_update_channel'
 import { introEs } from './intro-es'
+import { quoteFeedbackCopy } from './quote-feedback'
 
 export const esOverrides = {
+  quoteFeedback: quoteFeedbackCopy.es,
   sharedMetrics: esSharedMetrics,
   firstRun: esFirstRun,
   intro: introEs,
