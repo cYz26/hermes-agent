@@ -37,6 +37,9 @@ export interface RemoveQueuedPromptOptions {
 
 export interface QueuedPromptEntry {
   id: string
+  /** Canonical input identity (`input_id` on owner fanout). Without serverStatus this is an
+   *  unconfirmed admission: retry unchanged under this identity, never redirect a second copy. */
+  submissionId?: string
   serverStatus?: string
   /** The queued-row verbs the owner serves for a server row (`steer`, `replace`); none from an
    *  owner that predates them. Projected from the pending snapshot, never set locally. */
@@ -64,6 +67,8 @@ export interface QueuedPromptEntry {
 export interface EnqueueQueuedPromptPayload {
   /** Stable id to reuse (a canonical submission id), else one is minted. */
   id?: string
+  /** An already attempted canonical input, retained for an exact retry. */
+  submissionId?: string
   text: string
   attachments: ComposerAttachment[]
   displayText?: string
@@ -164,17 +169,20 @@ const toPersistedEntry = (entry: QueuedPromptEntry): QueuedPromptEntry => {
 /** Whether a queued entry can ride a mid-turn redirect: text-only, non-empty,
  *  not a slash command — the same gate `steerDraft` applies to the live draft
  *  (attachments can't ride a redirect; slash commands execute, not steer). */
-export const isSteerableEntry = (entry: Pick<QueuedPromptEntry, 'attachments' | 'text' | 'serverStatus'>): boolean => {
+export const isSteerableEntry = (
+  entry: Pick<QueuedPromptEntry, 'attachments' | 'text' | 'serverStatus' | 'submissionId'>
+): boolean => {
   const text = entry.text.trim()
 
-  return !entry.serverStatus && Boolean(text) && entry.attachments.length === 0 && !SLASH_COMMAND_RE.test(text)
+  return !entry.serverStatus && !entry.submissionId && Boolean(text) && entry.attachments.length === 0 &&
+    !SLASH_COMMAND_RE.test(text)
 }
 
 type QueueState = Record<string, QueuedPromptEntry[]>
 
 const STORAGE_KEY = 'hermes.desktop.composerQueue.v1'
 
-const load = (): QueueState => {
+const load = (fallback: QueueState = {}): QueueState => {
   if (typeof window === 'undefined') {
     return {}
   }
@@ -185,7 +193,7 @@ const load = (): QueueState => {
 
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as QueueState) : {}
   } catch {
-    return {}
+    return fallback
   }
 }
 
@@ -257,7 +265,7 @@ const setParked = (sid: string, parked: boolean) => {
   $parkedQueueSessions.set(next)
 }
 
-const current = (): QueueState => (storageCurrent ? load() : $queuedPromptsBySession.get())
+const current = (): QueueState => (storageCurrent ? load($queuedPromptsBySession.get()) : $queuedPromptsBySession.get())
 
 // Apply `op` to the LIVE persisted queue, not to one derived from the in-memory
 // atom: another window may have written since our last storage event, into any
@@ -311,7 +319,7 @@ if (typeof window !== 'undefined') {
       return
     }
 
-    $queuedPromptsBySession.set(load())
+    $queuedPromptsBySession.set(load($queuedPromptsBySession.get()))
   })
 }
 
@@ -361,6 +369,7 @@ export const enqueueQueuedPrompt = (
 
   const entry: QueuedPromptEntry = {
     id: payload.id ?? nextId(),
+    ...(payload.submissionId ? { submissionId: payload.submissionId } : {}),
     text: payload.text,
     ...(payload.displayText ? { displayText: payload.displayText } : {}),
     ...(payload.displayKind ? { displayKind: payload.displayKind } : {}),

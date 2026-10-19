@@ -497,6 +497,17 @@ long transcript or a busy terminal.
 
 ## Keyboard & cancellation
 
+- While a turn runs, ordinary Enter, the primary Queue button, and visible
+  widget submissions queue follow-ups. Cmd/Ctrl+Enter remains a Queue alias;
+  Shift+Enter inserts a newline. Empty busy Enter never promotes the queue.
+  Steer is a separate button and Cmd/Ctrl+Shift+Enter: an explicit redirect
+  (`interrupt`), not a tool-boundary injection. This desktop policy deliberately
+  overrides the backend's default busy-input mode without changing its config.
+  Slash commands still execute immediately and show Send. Waiting clarify cards
+  own their answers and block both draft and queue-row Steer. Hidden setup notes
+  retain their separate tool-boundary channel. Stop/Esc still park the queue.
+  Canonical owners admit Queue through the existing server FIFO; the renderer
+  never re-sends a server-owned queue row.
 - Keyboard ownership follows focus. The focused surface wins its keys; shell
   shortcuts must not steal a terminal's or editor's bindings.
 - Focusing the Sessions sidebar preserves the last active chat's visual emphasis.

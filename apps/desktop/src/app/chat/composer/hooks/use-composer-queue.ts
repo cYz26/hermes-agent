@@ -197,7 +197,8 @@ export function useComposerQueue({
 
   const beginQueuedEdit = (entry: QueuedPromptEntry) => {
     // A server row is editable only when its owner serves `replace` for it.
-    if (!activeQueueSessionKey || queueEdit || (entry.serverStatus && !entry.serverControls?.includes('replace'))) {
+    if (!activeQueueSessionKey || queueEdit || (entry.submissionId && !entry.serverStatus) ||
+        (entry.serverStatus && !entry.serverControls?.includes('replace'))) {
       return
     }
 
@@ -228,7 +229,9 @@ export function useComposerQueue({
       return true
     }
 
-    const index = queuedPrompts.findIndex(e => e.id === queueEdit.entryId)
+    // An unconfirmed canonical input can only be retried unchanged until its owner names the row.
+    const editable = queuedPrompts.filter(entry => entry.serverStatus || !entry.submissionId)
+    const index = editable.findIndex(e => e.id === queueEdit.entryId)
     const target = index + direction
 
     if (index < 0 || target < 0) {
@@ -250,7 +253,7 @@ export function useComposerQueue({
       frozenTransport: frozen.frozenTransport ?? null
     })
 
-    const next = queuedPrompts[target]
+    const next = editable[target]
 
     if (next) {
       setQueueEditSnapshot({ ...queueEdit, entryId: next.id })

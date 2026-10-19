@@ -141,6 +141,19 @@ describe('narrow tiles', () => {
 })
 
 describe('ComposerControls shortcut tooltips', () => {
+  it('shows Enter on primary Queue and a separate explicit Steer shortcut', async () => {
+    renderControls({ busy: true, busyAction: 'queue', onSteer: vi.fn() })
+
+    expect(screen.getByLabelText('Queue message').getAttribute('type')).toBe('submit')
+    await expectShortcutTooltip('Steer the current run', 'Ctrl+Shift+↵')
+  })
+
+  it('shows Enter for the primary Queue action', async () => {
+    renderControls({ busy: true, busyAction: 'queue' })
+
+    await expectShortcutTooltip('Queue message', '↵')
+  })
+
   it('labels busy Send with the effective configured action', async () => {
     renderControls({ busy: true, busyAction: 'steer' })
 

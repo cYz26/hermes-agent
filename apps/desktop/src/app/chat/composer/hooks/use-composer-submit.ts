@@ -19,7 +19,8 @@ import { resetBrowseState } from '@/store/composer-input-history'
 import { enqueueQueuedPrompt, type QueuedPromptEntry, serverOwnsComposerQueue } from '@/store/composer-queue'
 import { hasConnectionRequest, skipConnectionRequest } from '@/store/connection-request'
 import { notify } from '@/store/notifications'
-import { answerParkedCard, skipParkedCards, yieldParkedCardsToMessage } from '@/store/parked-card-answers'
+import { answerParkedCard, parkedCardWaiting, skipParkedCards, yieldParkedCardsToMessage } from '@/store/parked-card-answers'
+import { retainQueuedSubmission } from '@/store/pending-submissions'
 import { hasBlockingPromptRequest } from '@/store/prompts'
 
 import { cloneAttachments, type QueueEditState } from '../composer-utils'
@@ -174,14 +175,10 @@ export function useComposerSubmit({
   // and the exact visible surface captured at click time — every tile stays
   // mounted, and a session can be rendered in more than one pane.
   //
-  // Busy: a request from a card the user just clicked must not be dropped
-  // because the agent is mid-sentence — that gap is exactly when they click.
-  // Steer the live turn (the same stop-and-correct a typed message gets), and
-  // if the turn has already ended, or a steer is not possible, queue it so it
-  // runs next. This holds for hidden setup notes and for visible messages a
-  // button sends on the user's behalf alike.
-  const externalSubmitRef = useRef({ busy, dispatchSubmit, onSteer, onSteerHidden })
-  externalSubmitRef.current = { busy, dispatchSubmit, onSteer, onSteerHidden }
+  // Visible widget submissions queue like ordinary busy Enter. Hidden setup
+  // notes retain their separate tool-boundary channel, never a redirect.
+  const externalSubmitRef = useRef({ busy, dispatchSubmit, onSubmit, onSteerHidden })
+  externalSubmitRef.current = { busy, dispatchSubmit, onSubmit, onSteerHidden }
 
   useLayoutEffect(
     () =>
@@ -204,8 +201,43 @@ export function useComposerSubmit({
           const queueKey = activeQueueSessionKeyRef.current
 
           // External requests contain only text; the unsent draft and its attachments stay in the composer.
-          const enqueue = () =>
-            void enqueueQueuedPrompt(queueKey, { text, attachments: [], ...(displayKind ? { displayKind } : {}) })
+          const enqueue = () => {
+            const id = crypto.randomUUID()
+            const canonical = serverOwnsComposerQueue(sessionId ?? queueKey)
+
+            const keep = () =>
+              void (canonical ? retainQueuedSubmission : enqueueQueuedPrompt)(queueKey, {
+                id, text, attachments: [], ...(displayKind ? { displayKind } : {})
+              })
+
+            if (!canonical) {
+              keep()
+
+              return
+            }
+
+            // The owner admits canonical queues immediately. This is not a
+            // draft send: never clear/restore the user's unsent text or chips.
+            // A failed/uncertain admission keeps the SAME identity for retry;
+            // owner fanout can reconcile it without admitting a second turn.
+            void Promise.resolve()
+              .then(() =>
+                current.onSubmit(text, {
+                  attachments: [],
+                  fromQueue: true,
+                  submission_id: id,
+                  sessionId: sessionId ?? null,
+                  storedSessionId: queueKey,
+                  ...(displayKind ? { displayKind } : {})
+                })
+              )
+              .then(accepted => {
+                if (accepted !== true) {
+                  keep()
+                }
+              })
+              .catch(keep)
+          }
 
           // A hidden note never becomes a user turn: it rides session.steer into
           // the model's next tool result, and keeps its kind if it has to queue.
@@ -225,22 +257,7 @@ export function useComposerSubmit({
             return
           }
 
-          if (
-            current.onSteer &&
-            !hasBlockingPromptRequest(sessionId) &&
-            text.trim() &&
-            !SLASH_COMMAND_RE.test(text.trim())
-          ) {
-            void Promise.resolve(current.onSteer(text))
-              .then(accepted => {
-                if (!accepted) {
-                  enqueue()
-                }
-              })
-              .catch(enqueue)
-          } else {
-            enqueue()
-          }
+          enqueue()
         }
       }),
     [activeQueueSessionKeyRef, inputDisabled, paneVisible, scope.target, sessionId, surfaceId]
@@ -437,6 +454,12 @@ export function useComposerSubmit({
   // active model request with its displayed context or waits for the current
   // tool boundary. If the turn already ended, queue the words instead.
   const steerDraft = (mode: 'interrupt' | 'steer' = 'interrupt') => {
+    // Check live ownership as well as the rendered affordance: a card can park
+    // between the last paint and this explicit gesture. Never clear its answer.
+    if (queueEdit || parkedCardWaiting(sessionId ?? '') || hasBlockingPromptRequest(sessionId)) {
+      return
+    }
+
     const text = draftRef.current.trim()
 
     // Guard on live editor state, not the render-lagged `canSteer`: a redirect

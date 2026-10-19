@@ -24,7 +24,7 @@ export interface ComposerQueueSlotInputs {
   queuedPrompts: QueuedPromptEntry[]
   sendQueuedNow: (id: string) => unknown
   sessionId: null | string | undefined
-  steerQueuedNow: (id: string) => unknown
+  steerQueuedNow?: (id: string) => unknown
   t: Translations
 }
 
@@ -132,21 +132,25 @@ export function renderComposerQueueSlot({
         }
       }}
       onSendNow={id => void sendQueuedNow(id)}
-      onSteerNow={id => {
-        // A server row is steered by its owner, which consumes the admission so it never also runs;
-        // the pending fanout retires the card.
-        if (queuedPrompts.find(entry => entry.id === id)?.serverStatus) {
-          if (gateway) {
-            steerQueuedPrompt(sessionId, activeQueueSessionKey, id, gateway.request.bind(gateway)).catch(
-              (error: unknown) => notifyError(error, t.composer.queueStuckTitle)
-            )
-          }
+      onSteerNow={
+        steerQueuedNow
+          ? id => {
+              // A server row is steered by its owner, which consumes the admission so it never also runs;
+              // the pending fanout retires the card.
+              if (queuedPrompts.find(entry => entry.id === id)?.serverStatus) {
+                if (gateway) {
+                  steerQueuedPrompt(sessionId, activeQueueSessionKey, id, gateway.request.bind(gateway)).catch(
+                    (error: unknown) => notifyError(error, t.composer.queueStuckTitle)
+                  )
+                }
 
-          return
-        }
+                return
+              }
 
-        void steerQueuedNow(id)
-      }}
+              void steerQueuedNow(id)
+            }
+          : undefined
+      }
       parked={queueParked}
     />
   ) : null
