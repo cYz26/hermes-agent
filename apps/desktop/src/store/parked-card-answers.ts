@@ -102,7 +102,10 @@ export function parkedCardWaiting(sessionId: string): boolean {
   return kindsFor(sessionId).some(kind => kind.waiting(sessionId))
 }
 
-/** Whether a card waits in the onboarding chat, as a store: the composer offers Send for typed
- *  answers only there; every other chat keeps its normal controls. */
+/** Whether typed text answers a waiting card in this chat, including ordinary-chat clarify. */
+export const sessionParkedCardWaiting = (sessionId: null | string) =>
+  computed([$revision, onboardingChatStore(sessionId)], () => parkedCardWaiting(sessionId ?? ''))
+
+/** Onboarding-only view for surfaces that deliberately exclude ordinary chats. */
 export const sessionOnboardingCardWaiting = (sessionId: null | string) =>
   computed([$revision, onboardingChatStore(sessionId)], (_, onChat) => onChat && parkedCardWaiting(sessionId ?? ''))

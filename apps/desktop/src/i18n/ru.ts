@@ -1,6 +1,8 @@
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
+import { composerInputCopy } from './composer-input'
 import { defineLocale, type TranslationOverrides } from './define-locale'
+import { quoteFeedbackCopy } from './quote-feedback'
 import { ruAuxTasks } from './ru_aux_tasks'
 import { ruClarify } from './ru_clarify'
 import { ruConnectors } from './ru_connectors'
@@ -36,6 +38,7 @@ const RU_NOUN = (count: number | string, one: string, few: string, many: string)
 }
 
 export const ruOverrides = {
+  quoteFeedback: quoteFeedbackCopy.ru,
   connectors: ruConnectors.connectors,
   sharedMetrics: ruSharedMetrics,
   firstRun: ruFirstRun,
@@ -2676,12 +2679,7 @@ export const ruOverrides = {
       'Запустите дальше',
       'Скорректируйте или продолжите'
     ],
-    startVoice: 'Начать голосовой разговор',
-    openDirective: 'Открыть',
-    queueMessage: 'Вставить сообщение в очередь',
-    steer: 'Направить текущий запуск',
-    stop: 'Стоп',
-    send: 'Отправить',
+    ...composerInputCopy.ru,
     speaking: 'Говорит',
     transcribing: 'Расшифровка',
     thinking: 'Думает',

@@ -14,12 +14,14 @@ import type { BillingTranslations } from './types_billing'
 import type { BootTranslations } from './types_boot'
 import type { CatalogInstallTranslations } from './types_catalog_install'
 import type { ClarifyCopy } from './types_clarify'
+import type { ComposerInputTranslations } from './types_composer_input'
 import type { ConnectorAccountsTranslations, ConnectorCardTranslations } from './types_connectors'
 import type { FirstRunCopy } from './types_first_run'
 import type { ModelMenuTranslations } from './types_model_menu'
 import type { NoticeTranslations } from './types_notices'
 import type { OnboardingTranslations } from './types_onboarding'
 import type { SidebarProjectsTranslations } from './types_projects'
+import type { QuoteFeedbackCopy } from './types_quote_feedback'
 import type { SharedMetricsTranslations } from './types_shared_metrics'
 import type { ThemePickerCopy } from './types_theme_picker'
 import type { UninstallSectionTranslations } from './types_uninstall_section'
@@ -78,6 +80,7 @@ interface ModeOptionCopy {
 }
 
 export interface Translations extends NoticeTranslations {
+  quoteFeedback: QuoteFeedbackCopy
   /** Shared-metrics consent: first-run dialog + Settings › Safety toggles. */
   sharedMetrics: SharedMetricsTranslations
   appTour: AppTourTranslations
@@ -2952,7 +2955,7 @@ export interface Translations extends NoticeTranslations {
     markAllRead: string
   }
 
-  composer: {
+  composer: ComposerInputTranslations & {
     message: string
     wakingProfile: (profile: string) => string
     placeholderStarting: string
@@ -2960,12 +2963,7 @@ export interface Translations extends NoticeTranslations {
     placeholderFollowUp: string
     newSessionPlaceholders: readonly string[]
     followUpPlaceholders: readonly string[]
-    startVoice: string
-    openDirective: string
-    queueMessage: string
-    steer: string
-    stop: string
-    send: string
+
     speaking: string
     transcribing: string
     thinking: string

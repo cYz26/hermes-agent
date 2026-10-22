@@ -25,8 +25,6 @@ import { NEW_SESSION_TITLE, sessionTitle } from '@/lib/chat-runtime'
 import { useIncrementalExternalStoreRuntime } from '@/lib/incremental-external-store-runtime'
 import { useStoreSelector } from '@/lib/use-session-slice'
 import { cn } from '@/lib/utils'
-import { migrateSessionDraft } from '@/store/composer'
-import { migrateQueuedPrompts, parkQueuedPrompts } from '@/store/composer-queue'
 import { $introSplash } from '@/store/intro-splash'
 import { $pinnedSessionIds } from '@/store/layout'
 import { $introView } from '@/store/onboarding-intro'
@@ -44,17 +42,15 @@ import {
   $resumeExhaustedSessionId,
   $sessions,
   getSessionOwnerHint,
-  resolveComposerSessionKey,
   sessionMatchesStoredId,
-  sessionPinId,
-  shouldMigrateComposerScope
+  sessionPinId
 } from '@/store/session'
 import { $focusedStoredSessionId } from '@/store/session-focus'
 import { $sessionStates, sessionTileDelegate } from '@/store/session-states'
 import { $transcriptTailBySessionId, transcriptTailState } from '@/store/transcript-tail'
 import { isAuxiliaryWindow, isMainWindow } from '@/store/windows'
 
-import { primaryRouteSelectedSessionId, routeSessionId } from '../routes'
+import { routeSessionId } from '../routes'
 import { titlebarHeaderBaseClass, titlebarHeaderShadowClass, titlebarHeaderTitleClass } from '../shell/titlebar'
 
 import { ChatDropOverlay } from './chat-drop-overlay'
@@ -72,9 +68,13 @@ import {
 } from './composer/scope'
 import { useHistoryWindow } from './history-window'
 import { type DroppedFile, partitionDroppedFiles } from './hooks/use-composer-actions'
+import { useComposerSessionScope } from './hooks/use-composer-session-scope'
 import { useFileDropZone } from './hooks/use-file-drop-zone'
 import { shouldShowIntro } from './intro-visibility'
 import { ProfileTag } from './profile-tag'
+import { resolveQuoteFeedbackScope } from './quote-feedback/identity'
+import { QuoteFeedbackProvider } from './quote-feedback/scope'
+import { useQuoteFeedbackLineage } from './quote-feedback/use-lineage'
 import { ResumeExhaustedOverlay } from './resume-exhausted-overlay'
 import { isRouteSessionMismatch } from './route-session-state'
 import { useRuntimeMessageRepository } from './runtime-repository'
@@ -209,6 +209,8 @@ interface ChatRuntimeBoundaryProps {
   /** Route points at an unloaded session — render empty until resume swaps in
    *  the new transcript, so the previous session's messages don't linger. */
   suppressMessages: boolean
+  /** Same durable lineage/draft key as this surface's composer. */
+  feedbackSessionKey?: string | null
 }
 
 const NO_MESSAGES: ChatMessage[] = []
@@ -254,7 +256,8 @@ export function ChatRuntimeBoundary({
   onEdit,
   onReload,
   onThreadMessagesChange,
-  suppressMessages
+  suppressMessages,
+  feedbackSessionKey
 }: ChatRuntimeBoundaryProps) {
   const view = useSessionView()
   const runtimeId = useStore(view.$runtimeId)
@@ -288,6 +291,17 @@ export function ChatRuntimeBoundary({
         : { ...parentScope, connectionId: ownerConnection || undefined, profile: ownerProfile },
     [ownerConnection, ownerProfile, parentScope]
   )
+
+  const feedbackScope = resolveQuoteFeedbackScope({
+    activeProfile,
+    connectionId,
+    composer: composerScope,
+    owner: ownerRoute,
+    feedbackSessionKey,
+    storedId
+  })
+
+  useQuoteFeedbackLineage(feedbackScope, storedId)
 
   const history = useHistoryWindow({
     scopeKey: JSON.stringify([runtimeId, storedId, tailProfile, connectionId, activeProfile, suppressMessages]),
@@ -460,7 +474,12 @@ export function ChatRuntimeBoundary({
   return (
     <ComposerScopeProvider value={composerScope}>
       <TranscriptWindowProvider value={transcriptWindow}>
-        <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
+        <QuoteFeedbackProvider
+          enabled={!suppressMessages}
+          scope={feedbackScope}
+        >
+          <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>
+        </QuoteFeedbackProvider>
       </TranscriptWindowProvider>
     </ComposerScopeProvider>
   )
@@ -577,46 +596,15 @@ const ChatViewContent = memo(function ChatViewContent({
   const sessions = useStore($sessions)
   const resumeExhaustedSessionId = useStore($resumeExhaustedSessionId)
 
-  // Durable composer/queue scope (lineage root) so auto-compression tip rotation
-  // does not wipe an in-progress draft or orphan /queue entries. For the
-  // primary view, the route is authoritative over the store selection — the
-  // latter can be momentarily null/stale mid-switch, which used to leak into
-  // the composer's scope key (#59305). A tile has no route, so it always uses
-  // its own selection directly.
-  const queueSessionKey = useMemo(() => {
-    const effectiveSelectedSessionId = isPrimary
-      ? primaryRouteSelectedSessionId(location.pathname, selectedSessionId)
-      : selectedSessionId
-
-    return resolveComposerSessionKey(effectiveSelectedSessionId, sessions)
-  }, [isPrimary, location.pathname, selectedSessionId, sessions])
-
-  // When the tip row arrives after compression, migrate any tip-keyed stash onto
-  // the durable lineage key before the composer remounts onto that key.
-  //
-  // ONLY same-conversation rekeys (tip → root). The route-driven queueSessionKey
-  // can flip to Session B a frame before the store selection leaves Session A;
-  // migrating on bare inequality would re-home A's queued prompts onto B and
-  // auto-drain them into the wrong chat.
-  useEffect(() => {
-    if (!shouldMigrateComposerScope(selectedSessionId, queueSessionKey, sessions)) {
-      return
-    }
-
-    migrateSessionDraft(selectedSessionId, queueSessionKey)
-    migrateQueuedPrompts(selectedSessionId, queueSessionKey)
-  }, [queueSessionKey, selectedSessionId, sessions])
-
-  // Transcript-side stops (the streaming message's hover Stop, the runtime's
-  // cancel) are explicit halts, same as the composer's Stop button: park any
-  // queued turns so the interrupt doesn't roll straight into the next one.
-  // ChatBar wraps its own onCancel internally — its send-now-while-busy path
-  // needs the raw interrupt — so it still receives the unwrapped prop.
-  const haltRun = useCallback(() => {
-    parkQueuedPrompts(queueSessionKey || activeSessionId)
-
-    return onCancel()
-  }, [activeSessionId, onCancel, queueSessionKey])
+  const { queueSessionKey, feedbackSessionKey, haltRun } = useComposerSessionScope({
+    primary: isPrimary,
+    pathname: location.pathname,
+    selectedId: selectedSessionId,
+    runtimeId: activeSessionId,
+    freshDraftKey,
+    sessions,
+    onCancel
+  })
 
   // A tile IS its session — no route involved, never "mismatched".
   const routedSessionId = isPrimary ? routeSessionId(location.pathname) : selectedSessionId
@@ -777,6 +765,7 @@ const ChatViewContent = memo(function ChatViewContent({
 
       <ChatRuntimeBoundary
         busy={busy}
+        feedbackSessionKey={feedbackSessionKey}
         onCancel={haltRun}
         onEdit={onEdit}
         onReload={onReload}

@@ -7,10 +7,10 @@
  * held turn completes.
  */
 
-import { expect, test, type Page } from './test'
+import { MOCK_REPLY } from '../../../tests-js/scripts/mock-server'
 
 import { type MockBackendFixture, setupMockBackend, waitForAppReady } from './fixtures'
-import { MOCK_REPLY } from '../../../tests-js/scripts/mock-server'
+import { expect, type Page, test } from './test'
 
 const ACTIVE_PROMPT = 'E2E_QUEUE_TURN_BOUNDARY_ACTIVE'
 const QUEUED_PROMPT = 'E2E_QUEUE_TURN_BOUNDARY_QUEUED'
@@ -29,7 +29,7 @@ async function steer(page: Page, text: string): Promise<void> {
 
   await composer.click()
   await composer.type(text, { delay: 5 })
-  await page.keyboard.press('Enter')
+  await page.getByRole('button', { name: 'Steer the current run', exact: true }).click()
 }
 
 async function queue(page: Page, text: string): Promise<void> {
@@ -37,13 +37,16 @@ async function queue(page: Page, text: string): Promise<void> {
 
   await composer.click()
   await composer.type(text, { delay: 5 })
-  await page.keyboard.press('Control+Enter')
+  await page.keyboard.press('Enter')
 }
 
 async function transcriptMessageOrder(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const viewport = document.querySelector('[data-slot="aui_thread-viewport"]')
-    if (!viewport) return []
+
+    if (!viewport) {
+      return []
+    }
 
     return Array.from(viewport.querySelectorAll<HTMLElement>('[data-role="user"], [data-role="assistant"]'))
       .map(message => message.textContent?.trim() ?? '')
@@ -53,9 +56,17 @@ async function transcriptMessageOrder(page: Page): Promise<string[]> {
 
 function steerTurnOrder(messages: string[]): string[] {
   return messages.flatMap(message => {
-    if (message.includes(ACTIVE_PROMPT)) return [ACTIVE_PROMPT]
-    if (message.includes(STEER_PROMPT)) return [STEER_PROMPT]
-    if (message.includes(MOCK_REPLY)) return [MOCK_REPLY]
+    if (message.includes(ACTIVE_PROMPT)) {
+      return [ACTIVE_PROMPT]
+    }
+
+    if (message.includes(STEER_PROMPT)) {
+      return [STEER_PROMPT]
+    }
+
+    if (message.includes(MOCK_REPLY)) {
+      return [MOCK_REPLY]
+    }
 
     return []
   })
@@ -76,12 +87,14 @@ test.describe('queued prompt turn boundary', () => {
     fixture = null
   })
 
-  test('submits a queued prompt only after the active turn completes', async () => {
+  test('ordinary Enter queues until the active turn completes, including a repeated empty Enter', async () => {
     const { mock, page } = fixture!
 
     await send(page, ACTIVE_PROMPT)
     await mock.waitForHeldStream()
     await queue(page, QUEUED_PROMPT)
+    await expect(page.getByText('1 Queued')).toBeVisible()
+    await page.keyboard.press('Enter')
     await expect(page.getByText('1 Queued')).toBeVisible()
 
     // The mock keeps the active SSE stream open, so a queued prompt has no

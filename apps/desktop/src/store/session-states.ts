@@ -56,6 +56,7 @@ import { dropPreviewArtifactsForProfile, migratePreviewArtifactsForProfile } fro
 import { $activeGatewayProfile, normalizeProfileKey } from './profile'
 import { $projectTree } from './project-tree'
 import { clearAllProviderWaits, clearSessionProviderWait } from './provider-wait'
+import { dropQuoteFeedbackForProfile, migrateQuoteFeedbackForProfile } from './quote-feedback'
 import {
   $activeSessionId,
   $connection,
@@ -85,6 +86,7 @@ import {
 } from './session'
 import { secondaryProfileOwnerForEvent } from './session-event-provenance'
 import { $focusedStoredSessionId, TILE_PANE_PREFIX } from './session-focus'
+import { renameLocalSessionOwner } from './session-owner-rename'
 import { assertSessionOwnerResolved } from './session-owner-resolution'
 import {
   isSessionOwnerRoute,
@@ -2810,6 +2812,7 @@ export function dropTilesForProfile(
   // remotes whose tile key uses the URL fallback. Reuse the writer's resolved
   // connection scope so deletion cannot erase same-named local tabs instead.
   const ambientConnection = tileConnectionId || LOCAL_CONNECTION_ID
+  dropQuoteFeedbackForProfile(name, route, ambientConnection)
   const removedScope = backendScopeKey(route ? routeConnection : ambientConnection, routeProfile || name)
 
   const ownerMatches = (owner: SessionProfileRoute | undefined): boolean => {
@@ -2901,21 +2904,7 @@ export function migrateTilesForProfile(oldProfile: string, newProfile: string): 
     return
   }
 
-  const isLocal = (owner: SessionProfileRoute | undefined) =>
-    Boolean(owner) && (String(owner?.connectionId ?? '').trim() || 'local') === 'local'
-
-  const renamedOwner = (owner: SessionProfileRoute | undefined): SessionProfileRoute | undefined => {
-    if (!owner || !isLocal(owner)) {
-      return owner
-    }
-
-    const profile = normalizeProfileKey(owner.profile) === from ? to : owner.profile
-    const targetProfile = normalizeProfileKey(owner.targetProfile) === from ? to : owner.targetProfile
-
-    return profile === owner.profile && targetProfile === owner.targetProfile
-      ? owner
-      : { ...owner, profile, ...(targetProfile === undefined ? {} : { targetProfile }) }
-  }
+  const renamedOwner = (owner: SessionProfileRoute | undefined) => renameLocalSessionOwner(owner, from, to)
 
   const moved = tilesByProfile[from]
 
@@ -2946,6 +2935,7 @@ export function migrateTilesForProfile(oldProfile: string, newProfile: string): 
   migrateSessionOwnerHintsForProfile(from, to)
   migratePreviewArtifactsForProfile(from, to)
   migrateStatusDrawersForProfile(from, to)
+  migrateQuoteFeedbackForProfile(from, to)
   // Sibling family: the rail's profile-keyed buckets move with the rename, or
   // the renamed profile opens with an empty rail and the old name keeps them.
   migratePreviewTabsForProfile(from, to)

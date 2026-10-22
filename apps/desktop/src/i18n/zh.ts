@@ -1,7 +1,9 @@
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
+import { composerInputCopy } from './composer-input'
 import { defineLocale, type TranslationOverrides } from './define-locale'
 import { introZh } from './intro-zh'
+import { quoteFeedbackCopy } from './quote-feedback'
 import { zhAuxTasks } from './zh_aux_tasks'
 import { zhClarify } from './zh_clarify'
 import { zhConnectorCard } from './zh_connector_card'
@@ -16,6 +18,7 @@ import { zhThemePicker } from './zh_theme_picker'
 import { zhUpdateChannel } from './zh_update_channel'
 
 export const zhOverrides = {
+  quoteFeedback: quoteFeedbackCopy.zh,
   externalOpenFailed: {
     title: '无法打开此链接',
     message: '没有注册用于打开此地址的浏览器。请复制链接并手动打开。',
@@ -3287,12 +3290,7 @@ export const zhOverrides = {
       '再深入一点',
       '调整或继续'
     ],
-    startVoice: '开始语音对话',
-    openDirective: '打开',
-    queueMessage: '排队消息',
-    steer: '引导当前运行',
-    stop: '停止',
-    send: '发送',
+    ...composerInputCopy.zh,
     speaking: '讲话中',
     transcribing: '转写中',
     thinking: '思考中',

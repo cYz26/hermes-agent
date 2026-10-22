@@ -11,8 +11,10 @@ import { arDiagnostics } from './ar_diagnostics'
 import { arFirstRun } from './ar_first_run'
 import { arSettings } from './ar_settings'
 import { defineLocale, type TranslationOverrides } from './define-locale'
+import { quoteFeedbackCopy } from './quote-feedback'
 
 export const arOverrides = {
+  quoteFeedback: quoteFeedbackCopy.ar,
   connectors: {
     directory: {
       suggested: 'مقترحة',

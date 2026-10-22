@@ -162,26 +162,25 @@ describe('useComposerSubmit external request routing', () => {
     vi.restoreAllMocks()
   })
 
-  it.each([true, false])('steers a busy external visible submit and queues only on rejection (%s)', async accepted => {
+  it('queues a busy external visible submit without redirecting or changing the unsent draft', async () => {
     const { onSteer, onSubmit, clearDraft } = renderSubmitHook({ busy: true, text: 'unsent draft' })
-    onSteer.mockResolvedValue(accepted)
 
     await act(async () => {
       expect(requestComposerSubmit('Start without connections.', { target: 'main' })).toBe(true)
     })
 
-    expect(onSteer).toHaveBeenCalledExactlyOnceWith('Start without connections.')
+    expect(onSteer).not.toHaveBeenCalled()
     expect(onSubmit).not.toHaveBeenCalled()
     expect(clearDraft).not.toHaveBeenCalled()
     expect(getQueuedPrompts('stored-session').map(({ text, attachments }) => ({ text, attachments }))).toEqual(
-      accepted ? [] : [{ text: 'Start without connections.', attachments: [] }]
+      [{ text: 'Start without connections.', attachments: [] }]
     )
 
     await act(async () => {
       requestComposerSubmit('/status', { target: 'main' })
     })
     expect(getQueuedPrompts('stored-session').at(-1)?.text).toBe('/status')
-    expect(onSteer).toHaveBeenCalledTimes(1)
+    expect(onSteer).not.toHaveBeenCalled()
     expect(onSubmit).not.toHaveBeenCalled()
   })
 
@@ -351,7 +350,7 @@ describe('useComposerSubmit busy-turn routing', () => {
     clearComposerTerminalSelections()
   })
 
-  it('treats a payload mid-turn as send (steer), not stop', async () => {
+  it('queues an ordinary mid-turn payload without steering or stopping', () => {
     const { hook, onCancel, onSteer, onSubmit, queueCurrentDraft } = renderSubmitHook({
       busy: true,
       text: 'change course'
@@ -361,8 +360,8 @@ describe('useComposerSubmit busy-turn routing', () => {
       hook.result.current.submitDraft()
     })
 
-    await waitFor(() => expect(onSteer).toHaveBeenCalledWith('change course'))
-    expect(queueCurrentDraft).not.toHaveBeenCalled()
+    expect(queueCurrentDraft).toHaveBeenCalledTimes(1)
+    expect(onSteer).not.toHaveBeenCalled()
     expect(onCancel).not.toHaveBeenCalled()
     expect(onSubmit).not.toHaveBeenCalled()
   })
@@ -375,7 +374,7 @@ describe('useComposerSubmit busy-turn routing', () => {
     onSteer.mockResolvedValueOnce(false)
 
     act(() => {
-      hook.result.current.submitDraft()
+      hook.result.current.steerDraft()
     })
 
     await waitFor(() => expect(loadIntoComposer).toHaveBeenCalledWith('keep me', []))
@@ -386,7 +385,7 @@ describe('useComposerSubmit busy-turn routing', () => {
     onSteer.mockRejectedValueOnce(new Error('request timed out: session.redirect'))
 
     act(() => {
-      hook.result.current.submitDraft()
+      hook.result.current.steerDraft()
     })
 
     await waitFor(() => expect(getQueuedPrompts('stored-session').map(({ text }) => text)).toEqual(['still here']))
@@ -504,7 +503,7 @@ describe('useComposerSubmit busy-turn routing', () => {
     })
 
     act(() => {
-      hook.result.current.submitDraft()
+      hook.result.current.steerDraft()
     })
 
     await waitFor(() => expect(onSteer).toHaveBeenCalledWith('```terminal\nselected terminal lines\n```\n\nlook at'))
@@ -520,7 +519,7 @@ describe('useComposerSubmit busy-turn routing', () => {
     })
 
     act(() => {
-      hook.result.current.submitDraft()
+      hook.result.current.steerDraft()
     })
 
     expect(onSteer).not.toHaveBeenCalled()
@@ -771,13 +770,14 @@ describe('useComposerSubmit with a connection card parked on the session', () =>
     vi.spyOn(sessionOwnerUtils, 'resolveSessionOwner').mockRejectedValue(new Error('test no owner'))
     const gatewayRequest = vi.fn(async () => ({}))
     $gateway.set({ request: gatewayRequest } as unknown as NonNullable<ReturnType<typeof $gateway.get>>)
-    const { hook, onSteer } = renderSubmitHook({ busy: true, text: 'continue without connecting' })
+    const { hook, onSteer, queueCurrentDraft } = renderSubmitHook({ busy: true, text: 'continue without connecting' })
 
     act(() => {
       hook.result.current.submitDraft()
     })
 
-    await waitFor(() => expect(onSteer).toHaveBeenCalledWith('continue without connecting'))
+    expect(queueCurrentDraft).toHaveBeenCalledTimes(1)
+    expect(onSteer).not.toHaveBeenCalled()
     await waitFor(() =>
       expect(gatewayRequest).toHaveBeenCalledWith(
         'connection.respond',
@@ -858,7 +858,7 @@ describe('useComposerSubmit with a blocking prompt parked on the session', () =>
     expect(onSteer).not.toHaveBeenCalled()
   })
 
-  it("ignores another session's blocking prompt and still steers", async () => {
+  it("ignores another session's blocking prompt and queues the ordinary follow-up", () => {
     setApprovalRequest({ command: 'ls', description: 'other', sessionId: 'other-session' })
 
     const { hook, onSteer, queueCurrentDraft } = renderSubmitHook({ busy: true, text: 'change course' })
@@ -867,8 +867,8 @@ describe('useComposerSubmit with a blocking prompt parked on the session', () =>
       hook.result.current.submitDraft()
     })
 
-    await waitFor(() => expect(onSteer).toHaveBeenCalledWith('change course'))
-    expect(queueCurrentDraft).not.toHaveBeenCalled()
+    expect(queueCurrentDraft).toHaveBeenCalledTimes(1)
+    expect(onSteer).not.toHaveBeenCalled()
   })
 
   it('leaves the prompt pending — queueing must not resolve or dismiss it', () => {

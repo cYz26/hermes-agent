@@ -1,5 +1,6 @@
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
+import { composerInputCopy } from './composer-input'
 import { defineLocale, type TranslationOverrides } from './define-locale'
 import { frAuxTasks } from './fr_aux_tasks'
 import { frBoot } from './fr_boot'
@@ -16,8 +17,10 @@ import { frSharedMetrics } from './fr_shared_metrics'
 import { frThemePicker } from './fr_theme_picker'
 import { frUpdateChannel } from './fr_update_channel'
 import { introFr } from './intro-fr'
+import { quoteFeedbackCopy } from './quote-feedback'
 
 export const frOverrides = {
+  quoteFeedback: quoteFeedbackCopy.fr,
   sharedMetrics: frSharedMetrics,
   firstRun: frFirstRun,
   intro: introFr,
@@ -3838,12 +3841,7 @@ export const frOverrides = {
       'Poussez plus loin',
       'Ajustez ou continuez'
     ],
-    startVoice: 'Démarrer la conversation vocale',
-    openDirective: 'Ouvrir',
-    queueMessage: "Mettre le message en file d'attente",
-    steer: "Diriger l'exécution en cours",
-    stop: 'Arrêter',
-    send: 'Envoyer',
+    ...composerInputCopy.fr,
     speaking: 'Parle',
     transcribing: 'Transcription',
     thinking: 'Réfléchit',

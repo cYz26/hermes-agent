@@ -37,7 +37,7 @@ function renderControls(overrides: Partial<React.ComponentProps<typeof ComposerC
         disabled={false}
         hasComposerPayload={true}
         onDictate={vi.fn()}
-        onQueue={vi.fn()}
+        onSteer={vi.fn()}
         onToggleAutoSpeak={vi.fn()}
         state={state}
         voiceStatus="idle"
@@ -141,10 +141,10 @@ describe('narrow tiles', () => {
 })
 
 describe('ComposerControls shortcut tooltips', () => {
-  it('keeps Send (not Steer) while a turn is running if there is a payload', async () => {
-    renderControls({ busy: true, busyAction: 'steer' })
+  it('shows Queue as the default Enter action while a turn is running', async () => {
+    renderControls({ busy: true, busyAction: 'queue' })
 
-    await expectShortcutTooltip('Send', '↵')
+    await expectShortcutTooltip('Queue message', '↵')
   })
 
   it('shows Stop only when the composer is empty mid-turn', async () => {
@@ -167,10 +167,10 @@ describe('ComposerControls shortcut tooltips', () => {
     expect(screen.getByLabelText('Stop').hasAttribute('disabled')).toBe(false)
   })
 
-  it('shows Ctrl+Enter for Queue as the secondary mid-turn action', async () => {
-    renderControls({ busy: true, busyAction: 'queue' })
+  it('shows the explicit Steer shortcut separately from the default Queue action', async () => {
+    renderControls({ busy: true, busyAction: 'queue', canSteer: true })
 
-    await expectShortcutTooltip('Queue message', 'Ctrl+↵')
+    await expectShortcutTooltip('Steer the current run', 'Ctrl+Shift+↵')
   })
 
   it('hides Queue while idle even if the composer has a payload', () => {

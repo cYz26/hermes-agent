@@ -1,5 +1,6 @@
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
+import { composerInputCopy } from './composer-input'
 import { defineLocale, type TranslationOverrides } from './define-locale'
 import { introJa } from './intro-ja'
 import { jaAuxTasks } from './ja_aux_tasks'
@@ -15,8 +16,10 @@ import { jaProjects } from './ja_projects'
 import { jaSharedMetrics } from './ja_shared_metrics'
 import { jaThemePicker } from './ja_theme_picker'
 import { jaUpdateChannel } from './ja_update_channel'
+import { quoteFeedbackCopy } from './quote-feedback'
 
 export const jaOverrides = {
+  quoteFeedback: quoteFeedbackCopy.ja,
   connectors: jaConnectors.connectors,
   externalOpenFailed: {
     title: 'このリンクを開けませんでした',
@@ -2408,11 +2411,7 @@ export const jaOverrides = {
       'さらに進める',
       '調整または続行'
     ],
-    startVoice: '音声会話を開始',
-    openDirective: '開く',
-    queueMessage: 'メッセージをキューに入れる',
-    stop: '停止',
-    send: '送信',
+    ...composerInputCopy.ja,
     speaking: '話しています',
     transcribing: '文字起こし中',
     thinking: '考え中',

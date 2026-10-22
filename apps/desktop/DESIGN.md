@@ -383,6 +383,12 @@ from their root base tokens; do not multiply the global tokens or nest CSS zoom.
   horizontal code/output boundaries may remain contained. Thinking previews
   follow new tokens only while near the bottom, preserving the user's reading
   position until they scroll back down.
+- While a turn is running, ordinary Enter and the primary send button queue
+  follow-ups; Cmd/Ctrl+Enter remains a Queue alias. Repeated Enter on an empty
+  composer never interrupts or promotes a queued prompt. Steer is explicit:
+  the separate steering-wheel button, Cmd/Ctrl+Shift+Enter, or a queued row's
+  steering action. A waiting question still owns its answer, and slash commands
+  retain their own dispatch. Stop/Esc remain explicit halt operations.
 - Composer status groups start collapsed except todos. Progress updates and queue
   pause/resume preserve the user's disclosure choice. Error banners meet the
   stack's top edge without a blank padding strip. File and preview links remain

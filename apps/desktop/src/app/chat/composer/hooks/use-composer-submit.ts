@@ -18,7 +18,6 @@ import { enqueueQueuedPrompt, type QueuedPromptEntry } from '@/store/composer-qu
 import { hasConnectionRequest, skipConnectionRequest } from '@/store/connection-request'
 import { notify } from '@/store/notifications'
 import { answerParkedCard, skipParkedCards, yieldParkedCardsToMessage } from '@/store/parked-card-answers'
-import { hasBlockingPromptRequest } from '@/store/prompts'
 
 import { cloneAttachments, type QueueEditState } from '../composer-utils'
 import { onComposerSubmitRequest } from '../focus'
@@ -150,14 +149,11 @@ export function useComposerSubmit({
   // and the exact visible surface captured at click time — every tile stays
   // mounted, and a session can be rendered in more than one pane.
   //
-  // Busy: a request from a card the user just clicked must not be dropped
-  // because the agent is mid-sentence — that gap is exactly when they click.
-  // Steer the live turn (the same stop-and-correct a typed message gets), and
-  // if the turn has already ended, or a steer is not possible, queue it so it
-  // runs next. This holds for hidden setup notes and for visible messages a
-  // button sends on the user's behalf alike.
-  const externalSubmitRef = useRef({ busy, dispatchSubmit, onSteer, onSteerHidden })
-  externalSubmitRef.current = { busy, dispatchSubmit, onSteer, onSteerHidden }
+  // Visible button/widget submissions follow the same queue-first policy as
+  // typed follow-ups. Hidden setup notes still ride the tool-boundary channel
+  // without becoming a new user turn or interrupting the live request.
+  const externalSubmitRef = useRef({ busy, dispatchSubmit, onSteerHidden })
+  externalSubmitRef.current = { busy, dispatchSubmit, onSteerHidden }
 
   useLayoutEffect(
     () =>
@@ -201,29 +197,14 @@ export function useComposerSubmit({
             return
           }
 
-          if (
-            current.onSteer &&
-            !hasBlockingPromptRequest(sessionId) &&
-            text.trim() &&
-            !SLASH_COMMAND_RE.test(text.trim())
-          ) {
-            void Promise.resolve(current.onSteer(text))
-              .then(accepted => {
-                if (!accepted) {
-                  enqueue()
-                }
-              })
-              .catch(enqueue)
-          } else {
-            enqueue()
-          }
+          enqueue()
         }
       }),
-    [activeQueueSessionKeyRef, inputDisabled, paneVisible, scope.target, sessionId, surfaceId]
+    [activeQueueSessionKeyRef, inputDisabled, paneVisible, scope.target, surfaceId]
   )
 
   // Returns false when the submit was refused and must not refocus the input.
-  const submitWhileBusy = (text: string, payloadPresent: boolean, blockingPrompt: boolean) => {
+  const submitWhileBusy = (text: string, payloadPresent: boolean) => {
     // Slash commands should execute immediately even while the agent is
     // busy — they're client-side operations (/yolo, /skin, /new, /help,
     // etc.) or self-contained gateway RPCs (/status, /compress).  onSubmit
@@ -248,18 +229,9 @@ export function useComposerSubmit({
       triggerHaptic('submit')
       clearDraft()
       dispatchSubmit(text)
-    } else if (!blockingPrompt && !attachments.length && text.trim()) {
-      // Cursor-style stop-and-correct: interrupt the live turn and redirect
-      // it with this text. redirect() preserves the shown reasoning/work; if
-      // the turn already ended, steerDraft re-queues so nothing is lost.
-      // Compaction is the gateway's call: it answers `queued` under the
-      // compression lock. The client flag can outlive an aborted compaction.
-      steerDraft()
     } else if (payloadPresent) {
-      // Attachments can't ride a redirect (no tool-result image carriage) —
-      // queue the whole payload for the next turn. Same for a turn parked on
-      // an approval/sudo/secret prompt: a steer can't reach the model while
-      // the tool batch is blocked, so the message runs as the next turn.
+      // Ordinary follow-ups never redirect the active turn. Steering is an
+      // explicit action; text and attachments both wait for the next turn.
       queueCurrentDraft()
     } else {
       // Stop button (the only way to reach here while busy with an empty
@@ -370,20 +342,10 @@ export function useComposerSubmit({
       return
     }
 
-    // Approval / sudo / secret prompts also park the turn inside a tool batch,
-    // but typing CANNOT answer them (no message text approves a command or
-    // supplies a password), so there is no skip-and-steer path: a steer would
-    // sit undelivered behind the blocked prompt, and stopping the turn to force
-    // it through resolves the prompt to empty and ends the turn as "Operation
-    // interrupted." — the message looks eaten. Queue the words as the next turn
-    // instead; the prompt stays answerable and the queue drains on settle. A
-    // setup card that just closed for this message ends its turn the same way.
-    const blockingPrompt = !queueEdit && (parked === 'yielded' || hasBlockingPromptRequest(sessionId))
-
     if (queueEdit) {
       exitQueuedEdit('save')
     } else if (busy) {
-      if (!submitWhileBusy(text, payloadPresent, blockingPrompt)) {
+      if (!submitWhileBusy(text, payloadPresent)) {
         return
       }
     } else if (!payloadPresent && queuedPrompts.length > 0) {

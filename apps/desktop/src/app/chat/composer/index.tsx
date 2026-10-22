@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button'
 import { Slot as ContribSlot } from '@/contrib/react/slot'
 import { useI18n } from '@/i18n'
 import { chatMessageText } from '@/lib/chat-messages'
+import { isSlashCommandText } from '@/lib/chat-runtime'
 import { sanitizeComposerInput } from '@/lib/composer-input-sanitize'
 import { DATA_IMAGE_URL_RE } from '@/lib/embedded-images'
 import { triggerHaptic } from '@/lib/haptics'
@@ -41,6 +42,8 @@ import { useForcedTextDirection } from '@/store/text-direction'
 import { $threadScrolledUpBySession } from '@/store/thread-scroll'
 import { $autoSpeakReplies } from '@/store/voice-prefs'
 import { useTheme } from '@/themes'
+
+import { QuoteFeedbackPanel } from '../quote-feedback/panel'
 
 import { AttachmentList } from './attachments'
 import {
@@ -82,6 +85,7 @@ import { useMiddlewareSubmit } from './hooks/use-middleware-submit'
 import { useSlashCompletions } from './hooks/use-slash-completions'
 import { useStatusDrawer } from './hooks/use-status-drawer'
 import { useSessionStatusPresence } from './hooks/use-status-presence'
+import { composerSteeringPolicy, modifiedEnterIntent } from './input-policy'
 import { shouldConvertPasteToAttachment } from './large-paste'
 import { ActionBadges } from './micro-actions'
 import { chipTypedPathOnSpace, pathifyRefs } from './path-refs'
@@ -330,7 +334,6 @@ export function ChatBar({
   // and bounded auto-drain. Consumes the draft API and writes `queueEditRef`.
   const {
     beginQueuedEdit,
-    deliverQueuedNow,
     drainNextQueued,
     editingQueuedPrompt,
     exitQueuedEdit,
@@ -384,20 +387,19 @@ export function ChatBar({
   const hasComposerPayload = hasText || attachments.length > 0
   const { canSubmit, cardWaiting } = useCardWaitingSubmit(sessionId ?? null, busy, hasComposerPayload)
 
-  // Steer only makes sense mid-turn, text-only (the gateway can't carry images
-  // into a tool result) and never for a slash command (those execute inline).
-  // A blocking prompt (approval/sudo/secret) also rules it out: the tool batch
-  // is parked on the user, so a steer can't reach the model — text queues.
-  // Compaction does not: the gateway holds the correction until it finishes.
-  const canSteer = busy && !blockingPrompt && !!onSteer && attachments.length === 0 && isSteerableText
+  const { canSteer, steeringAllowed } = composerSteeringPolicy({
+    blockingPrompt: Boolean(blockingPrompt),
+    busy,
+    cardWaiting,
+    editingQueuedPrompt: Boolean(queueEdit),
+    hasAttachments: attachments.length > 0,
+    isSteerableText,
+    steerSupported: Boolean(onSteer)
+  })
 
-  // While busy: text redirects the live turn (Cursor-style stop-and-correct),
-  // attachments queue for the next turn, an empty composer stops.
-  const busyAction: 'steer' | 'queue' | 'stop' = canSteer
-    ? 'steer'
-    : compacting || hasComposerPayload
-      ? 'queue'
-      : 'stop'
+  // Ordinary sends queue mid-turn. Redirecting the current turn is a separate,
+  // explicitly chosen action; an empty composer retains the Stop button.
+  const busyAction = isSlashCommandText(draftRef.current) ? 'send' : compacting || hasComposerPayload ? 'queue' : 'stop'
 
   // The submit engine — the orchestration seam where draft + queue meet. Owns
   // the submit decision tree, the send-with-restore primitive, and steer.
@@ -946,9 +948,20 @@ export function ChatBar({
       return
     }
 
-    // Cmd/Ctrl+Enter queues a follow-up while a turn runs. Plain Enter steers
-    // a text-only draft, so both live-turn actions stay reachable by keyboard.
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
+    // Steering is opt-in, never the side effect of sending another message.
+    if (modifiedEnterIntent(event) === 'steer') {
+      event.preventDefault()
+
+      if (steeringAllowed && !disabled) {
+        syncDraftFromEditor()
+        steerDraft()
+      }
+
+      return
+    }
+
+    // Keep the existing explicit Queue shortcut as an alias for busy Enter.
+    if (modifiedEnterIntent(event) === 'queue') {
       event.preventDefault()
 
       if (busy && !disabled) {
@@ -989,22 +1002,10 @@ export function ChatBar({
         return
       }
 
-      // Empty Enter while busy. With prompts queued this is the double-send:
-      // the first Enter put the words in the queue, a second delivers them
-      // now — steered into the live turn when a steer can carry them, else
-      // promote + interrupt + drain on settle — mirroring the idle empty-Enter
-      // drain above. With nothing queued it stays a no-op — interrupting is
-      // explicit (Stop/Esc), never a stray Enter after sending. Gate on the live
-      // DOM payload (not the render-lagged composer state) so a message typed
-      // fast / via IME while busy still reaches submitDraft() and gets queued
-      // instead of being mistaken for an empty Enter.
+      // Sending a follow-up clears the editor. A repeated Enter must not
+      // promote that queued message into a correction or interrupt the turn.
+      // Steer and send-now remain explicit actions in the queue panel.
       if (busy && !hasLivePayload) {
-        const head = queuedPrompts.find(entry => entry.id !== queueEdit?.entryId)
-
-        if (head) {
-          void deliverQueuedNow(head.id)
-        }
-
         return
       }
 
@@ -1108,6 +1109,7 @@ export function ChatBar({
       autoSpeak={autoSpeak}
       busy={busy}
       busyAction={busyAction}
+      canSteer={canSteer}
       canSubmit={canSubmit}
       cardWaiting={cardWaiting}
       compactModelPill={poppedOut || compactPill}
@@ -1127,7 +1129,12 @@ export function ChatBar({
       hideModelPill={guidedChat}
       minimal={minimal || chatOnboardingSolo}
       onDictate={dictate}
-      onQueue={queueDraft}
+      onSteer={() => {
+        if (!composingRef.current) {
+          syncDraftFromEditor()
+          steerDraft()
+        }
+      }}
       onToggleAutoSpeak={handleToggleAutoSpeak}
       state={state}
       voiceStatus={voiceStatus}
@@ -1304,6 +1311,30 @@ export function ChatBar({
             <SuggestionPills sessionId={statusSessionId} />
             <OnboardingSkip sessionId={statusSessionId} />
           </div>
+          <QuoteFeedbackPanel
+            onAddToDraft={text => {
+              if (
+                inputDisabled ||
+                queueEdit ||
+                !editorRef.current ||
+                draftScopeRef.current !== activeQueueSessionKeyRef.current
+              ) {
+                return false
+              }
+
+              // Bank live keystrokes before the append; persist the text before
+              // the feedback list releases its only copy of these passages.
+              syncDraftFromEditor()
+              withUndoPoint(() => {
+                insertText(`\n${text}`)
+
+                return true
+              })
+              stashAt(draftScopeRef.current)
+
+              return true
+            }}
+          />
           {/* Session-scoped status stack (todos, subagents, background tasks,
               queue). An in-flow dock child: the dock is bottom-anchored, so it
               grows upward over the thread and the dock's own measurement covers
@@ -1333,7 +1364,7 @@ export function ChatBar({
                       }
                     }}
                     onSendNow={id => void sendQueuedNow(id)}
-                    onSteerNow={id => void steerQueuedNow(id)}
+                    onSteerNow={cardWaiting || blockingPrompt ? undefined : id => void steerQueuedNow(id)}
                     parked={queueParked}
                   />
                 ) : null

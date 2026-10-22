@@ -5,6 +5,7 @@ import type { ChatMessage } from '@/lib/chat-messages'
 import { type ComposerAttachmentScope, mainComposerScope } from '@/store/composer'
 import { $activeSessionAwaitingInput } from '@/store/prompts'
 import { $messages } from '@/store/session'
+import type { SessionOwnerRoute } from '@/store/session-request-router'
 
 import type { ComposerTarget } from './focus'
 
@@ -34,6 +35,9 @@ export interface ComposerScope {
   /** Owner profile of this scope's session (a Bot tile runs on the Bot's own
    *  profile). Voice playback synthesizes with it; undefined → active profile. */
   profile?: null | string
+  /** Complete captured surface owner; quote persistence must retain the desktop
+   *  alias separately from the backend profile used by voice and RPCs. */
+  ownerRoute?: SessionOwnerRoute
   /** Focus-bus routing key (`'main'` | `'tile:<id>'`). */
   target: ComposerTarget
 }

@@ -1,5 +1,6 @@
 import { defineFieldCopy } from '@/app/settings/field-copy'
 
+import { composerInputCopy } from './composer-input'
 import { deAuxTasks } from './de_aux_tasks'
 import { deBoot } from './de_boot'
 import { deClarify } from './de_clarify'
@@ -16,8 +17,10 @@ import { deThemePicker } from './de_theme_picker'
 import { deUpdateChannel } from './de_update_channel'
 import { defineLocale, type TranslationOverrides } from './define-locale'
 import { introDe } from './intro-de'
+import { quoteFeedbackCopy } from './quote-feedback'
 
 export const deOverrides = {
+  quoteFeedback: quoteFeedbackCopy.de,
   sharedMetrics: deSharedMetrics,
   firstRun: deFirstRun,
   intro: introDe,
@@ -3830,12 +3833,7 @@ export const deOverrides = {
       'Noch weiter',
       'Anpassen oder fortfahren'
     ],
-    startVoice: 'Sprachkonversation starten',
-    openDirective: 'Öffnen',
-    queueMessage: 'Nachricht einreihen',
-    steer: 'Laufenden Lauf steuern',
-    stop: 'Stopp',
-    send: 'Senden',
+    ...composerInputCopy.de,
     speaking: 'Spricht',
     transcribing: 'Transkribiert',
     thinking: 'Denkt',

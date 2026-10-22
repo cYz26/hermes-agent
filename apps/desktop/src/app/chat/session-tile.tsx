@@ -295,13 +295,12 @@ function TileChat({
       attachments,
       connectionId: ownerRoute?.connectionId || undefined,
       profile: ownerRoute?.targetProfile || ownerRoute?.profile || undefined,
+      ownerRoute,
       target: `tile:${storedSessionId}`
     }),
     [
       attachments,
-      ownerRoute?.connectionId,
-      ownerRoute?.profile,
-      ownerRoute?.targetProfile,
+      ownerRoute,
       runtimeId,
       storedSessionId,
       view.$messages

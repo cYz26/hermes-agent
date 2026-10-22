@@ -42,3 +42,4 @@ export {
 } from './registry'
 export { runtimeTranslations, setRuntimeI18nLocale, translateNow } from './runtime'
 export type { BundledLocale, Locale, ToolTitleKey, Translations } from './types'
+export type { QuoteFeedbackCopy } from './types_quote_feedback'
